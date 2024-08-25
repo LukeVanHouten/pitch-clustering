@@ -33,20 +33,30 @@ mean_good_kn_spin_rate <- round(mean(filter(stats_df, game_year >= 2021,
                                             pitch_type == "KN", 
                                             release_spin_rate < 
                                             500)$release_spin_rate), 0)
-spin_rates_sample <- abs(round(rnorm(round(1.05 * bad_pitches, 0), 
+spin_rates_sample <- abs(round(rnorm(round(1.1 * bad_pitches, 0), 
                                      mean = mean_good_kn_spin_rate, 
                                      sd = mean_good_kn_spin_rate / 2), 0))
 low_spin_rates <- spin_rates_sample[((min(na.omit(stats_df$release_spin_rate))) 
                                      < spin_rates_sample) & 
-                                    (spin_rates_sample < 500)][1:bad_pitches]
+                                    (spin_rates_sample < 
+                                     500)][1:bad_pitches] %>%
+    sort(decreasing = TRUE)
+
+set.seed(333)
 
 dickey_features <- dickey_df %>%
-    select(release_speed, release_spin_rate, pfx_x, pfx_z) %>%
-    mutate(release_spin_rate = replace(release_spin_rate, 
-                                       is.na(release_spin_rate), 
-                                       low_spin_rates))
+    select(release_speed, release_spin_rate, pfx_x, pfx_z, pitch_type) %>%
+    mutate(rank = rank(release_speed, ties.method = "first", na.last = "keep"), 
+           jittered_rank = rank + rnorm(n(), mean = 0, sd = 1000)) %>%
+    arrange(desc(jittered_rank)) %>%
+    mutate(release_spin_rate = replace(release_spin_rate,
+                                       is.na(release_spin_rate),
+                                       low_spin_rates)) %>%
+    select(-rank, -jittered_rank)
 
-dickey_model <- Mclust(dickey_features, modelNames = "VVV")
+set.seed(333)
+
+dickey_model <- Mclust(select(dickey_features, -pitch_type), modelNames = "VVV")
 summary(dickey_model)
 
 dickey_p1 <- as.ggplot(function() plot(dickey_model, dimen = c(2, 1), 
@@ -55,3 +65,28 @@ dickey_p1 <- as.ggplot(function() plot(dickey_model, dimen = c(2, 1),
 dickey_p2 <- as.ggplot(function() plot(dickey_model, dimen = c(3, 4), 
                                        what = "classification"))
 dickey_p1 / dickey_p2
+
+cluster_names <- cbind(dickey_features$pitch_type, 
+                       dickey_model$classification) %>%
+    as.data.frame() %>%
+    `colnames<-`(c("pitch_type", "cluster")) %>%
+    group_by(pitch_type, cluster) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    pivot_wider(names_from = cluster, values_from = count, 
+                values_fill = 0) %>%
+    select(pitch_type, sort(colnames(.)[2:ncol(.)])) %>%
+    mutate(row_id = row_number()) %>%
+    arrange(match(row_id, apply(across(-pitch_type), 2, which.max))) %>%
+    as.data.frame() %>%
+    `rownames<-`(.$pitch_type) %>%
+    select(-pitch_type, -row_id)
+
+if (ncol(cluster_names) >= 4) {
+    rbind(cluster_names, c("R.A. Dickey", 2015, "pitch", "clusters",
+                           rep("", ncol(cluster_names) - 4))) %>%
+        `rownames<-`(c(rownames(cluster_names), "Pitcher")) %>%
+        suppressWarnings() %>%
+        View()
+} else {
+    View(cluster_names)
+}

@@ -1,0 +1,10 @@
+Class <- pitcher_df$pitch_type
+clp <- clPairs(select(pitcher_df, release_speed, release_spin_rate,
+                      pfx_x, pfx_z), pitcher_df$pitch_type, lower.panel = NULL)
+clPairsLegend(0.1, 0.55, class = clp$class, col = clp$col, pch = clp$pch)
+table(Class)
+
+heatmap(apply(t(model$parameters$mean), 2,
+              function(x) ((x - min(x)) / (max(x) - min(x)))), Rowv = NA,
+        scale = "none", margins = c(8, 2), labRow = paste("Cluster", 1:model$G),
+        cexRow = 1.2)

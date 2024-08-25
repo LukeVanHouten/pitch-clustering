@@ -50,12 +50,6 @@ outcomes_df <- pitcher_df %>%
            score = event + call, outcome = as.numeric(score >= 1)) %>%
     select(-event, -call, -score)
 
-# Class <- pitcher_df$pitch_type
-# clp <- clPairs(select(pitcher_df, release_speed, release_spin_rate,
-#                       pfx_x, pfx_z), pitcher_df$pitch_type, lower.panel = NULL)
-# clPairsLegend(0.1, 0.55, class = clp$class, col = clp$col, pch = clp$pch)
-# table(Class)
-# 
 # set.seed(333)
 # 
 # cluster_df <- pitcher_df %>%
