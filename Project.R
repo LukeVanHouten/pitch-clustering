@@ -32,7 +32,7 @@ pitcher_names <- stats_df %>%
 pitcher_df <- stats_df %>%
     select(pitch_type, game_pk, game_year, game_date, pitcher, release_speed,
            release_spin_rate, pfx_x, pfx_z, at_bat_number, pitch_number, 
-           events) %>%
+           events, type) %>%
     mutate(pitcher_year = paste0(pitcher, "_", game_year)) %>%
     filter(pitcher_year %in% pitcher_names$pitcher_year, 
            !is.na(release_speed), !is.na(release_spin_rate), !is.na(pfx_x), 
@@ -40,17 +40,19 @@ pitcher_df <- stats_df %>%
     arrange(pitcher, game_date, game_pk, at_bat_number, pitch_number)
 
 outcomes_df <- pitcher_df %>%
-    select(game_pk, game_year, pitcher, at_bat_number, events) %>%
+    select(game_pk, game_year, pitcher, at_bat_number, events, type) %>%
     group_by(pitcher, game_year, game_pk, at_bat_number) %>%
-    mutate(events = last(events), outcome = as.numeric(
-        events %in% c("strikeout", "pickoff_1b", "pickoff_3b", "other_out",
-                      "strikeout_double_play", "double_play", "triple_play",
-                      "caught_stealing_2b", "field_out", "caught_stealing_home", 
-                      "grounded_into_double_play")))
+    mutate(event = as.numeric(
+        events %in% c("strikeout", "field_out", "grounded_into_double_play", 
+                      "double_play", "triple_play", "pickoff_1b", "pickoff_3b", 
+                      "caught_stealing_2b", "caught_stealing_home", "other_out",
+                      "strikeout_double_play")), call = as.numeric(type == "S"), 
+           score = event + call, outcome = as.numeric(score >= 1)) %>%
+    select(-event, -call, -score)
 
 # Class <- pitcher_df$pitch_type
-# clp <- clPairs(select(pitcher_df, release_speed, release_spin_rate, 
-#                       pfx_x, pfx_z), Class, lower.panel = NULL)
+# clp <- clPairs(select(pitcher_df, release_speed, release_spin_rate,
+#                       pfx_x, pfx_z), pitcher_df$pitch_type, lower.panel = NULL)
 # clPairsLegend(0.1, 0.55, class = clp$class, col = clp$col, pch = clp$pch)
 # table(Class)
 # 
