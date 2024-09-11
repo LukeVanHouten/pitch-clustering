@@ -48,7 +48,8 @@ outcomes_df <- pitcher_df %>%
                       "caught_stealing_2b", "caught_stealing_home", "other_out",
                       "strikeout_double_play")), call = as.numeric(type == "S"), 
            score = event + call, outcome = as.numeric(score >= 1)) %>%
-    select(-event, -call, -score)
+    ungroup() %>%
+    select(outcome)
 
 # set.seed(333)
 # 
@@ -57,7 +58,8 @@ outcomes_df <- pitcher_df %>%
 #            -pitcher_year) %>%
 #     group_by(pitcher, game_year) %>%
 #     mutate(id = row_number(), model = map2(id, pitcher, 
-#            ~ {if (.x == 1) Mclust(data.frame(release_speed, release_spin_rate, 
+#            ~ {if (.x == 1) set.seed(333)
+#                            Mclust(data.frame(release_speed, release_spin_rate, 
 #                                              pfx_x, pfx_z), 
 #                                   modelNames = "VVV") 
 #               else if (.x == 2) "second" 
@@ -71,52 +73,72 @@ outcomes_df <- pitcher_df %>%
 #     ungroup()
 # 
 # write.csv(cluster_df$cluster, "clusters.csv", row.names = FALSE)
+# 
+# more_stats_df <- cluster_df %>%
+#     group_by(pitcher, game_year) %>%
+#     mutate(model = replace(model, 4, paste("BIC =", round(model[[1]]$bic, 4))),
+#            model = replace(model, 5, paste("ICL =", round(model[[1]]$icl, 4))),
+#            model = replace(model, 6, paste("Model name =", 
+#                                            model[[1]]$modelName)),
+#            model = replace(model, 7, paste("n =", model[[1]]$n)),
+#            model = replace(model, 8, paste("df =", model[[1]]$df)),
+#            model = replace(model, 9, paste("Log-likelihood =", 
+#                                            round(model[[1]]$loglik, 4)))) %>%
+#     ungroup() %>%
+#     select(pitcher, game_year, model)
+# 
+# more_stats_info <- more_stats_df %>%
+#     group_by(pitcher, game_year) %>%
+#     mutate(model = replace(model, 1, "model")) %>%
+#     ungroup() %>%
+#     select(model) %>%
+#     mutate(model = as.character(model))
+# 
+# write.csv(more_stats_info, "model_info.csv", row.names = FALSE)
 
-test_df_1 <- read.csv("clusters.csv")
+clusters <- read.csv("clusters.csv")
+model_info <- read.csv("model_info.csv")
 
-more_stats_df <- cluster_df %>%
+cluster_df <- cbind(pitcher_df, outcomes_df, clusters, model_info) %>%
+    select(-game_pk, -game_date, -at_bat_number, -pitch_number, -events, -type, 
+           -pitcher_year) %>%
+    `colnames<-`(c(colnames(.)[1:8], "cluster", "mod"))
+
+cluster_counts <- cluster_df %>%
+    select(pitcher, game_year, cluster) %>%
     group_by(pitcher, game_year) %>%
-    mutate(model = replace(model, 4, paste("BIC =", round(model[[1]]$bic, 4))),
-           model = replace(model, 5, paste("ICL =", round(model[[1]]$icl, 4))),
-           model = replace(model, 6, paste("Model name =", 
-                                           model[[1]]$modelName)),
-           model = replace(model, 7, paste("n =", model[[1]]$n)),
-           model = replace(model, 8, paste("df =", model[[1]]$df)),
-           model = replace(model, 9, paste("Log-likelihood =", 
-                                           round(model[[1]]$loglik, 4)))) %>%
+    summarize(num_clusters = max(cluster), .groups = "drop") %>%
     ungroup() %>%
-    select(pitcher, game_year, model)
+    group_by(game_year) %>%
+    summarize(avg_clusters = mean(num_clusters), .groups = "drop")
 
-more_stats_info <- more_stats_df %>%
-    group_by(pitcher, game_year) %>%
-    mutate(model = replace(model, 1, "model")) %>%
-    ungroup() %>%
-    select(model) %>%
-    mutate(model = as.character(model))
-
-write.csv(more_stats_info, "model_info.csv", row.names = FALSE)
-
-test_df_2 <- read.csv("model_info.csv")
+plot_points <- data.frame(
+    color = c("", "", "blue", "red", "green", "purple", "orange", "lightblue", 
+              "maroon", "darkgreen", "steelblue"),
+    shape = c("", "", "circle", "square", "triangle", "plus", "square", "cross", 
+              "circle", "star", "triangle")) %>% t() %>%
+    `colnames<-`(c("pitch_type", "row_id", 1:9))
+    
 
 set.seed(333)
 
-get_model <- function(pitcher_id, year) {
+get_model <- function(player, year_id) {
+    set.seed(333)
+    
     features_df <- pitcher_df %>%
         select(pitcher, game_year, release_speed, release_spin_rate, pfx_x, 
                pfx_z) %>%
-        filter(pitcher == pitcher_id, game_year == year) %>%
+        filter(pitcher == player, game_year == year_id) %>%
         select(-pitcher, -game_year)
     
     local_model <- Mclust(features_df, modelNames = "VVV")
     assign("model", local_model, envir = globalenv())
 }
 
-get_model(pitcher_id = 669302, year = 2023)
+set.seed(333)
 
 plot_clusters <- function(pitcher_id, year) {
-    plot_df <- cluster_df %>%
-        filter(pitcher == pitcher_id, game_year == year)
-    mod <- plot_df$model[[1]]
+    mod <- get_model(player = pitcher_id, year_id = year)
     
     p1 <- as.ggplot(function() plot(mod, dimen = c(2, 1), 
                                     what = "classification")) +
@@ -131,7 +153,9 @@ set.seed(333)
 get_cluster_table <- function(pitcher_id, year) {
     cluster_names <- cluster_df %>%
         filter(pitcher == pitcher_id, game_year == year) %>%
-        select(-pitcher, -game_year, -id, -model) %>%
+        select(pitch_type) %>%
+        cbind(., model$classification) %>%
+        `colnames<-`(c("pitch_type", "cluster")) %>%
         group_by(pitch_type, cluster) %>%
         summarise(count = n(), .groups = "drop") %>%
         pivot_wider(names_from = cluster, values_from = count, 
@@ -140,15 +164,28 @@ get_cluster_table <- function(pitcher_id, year) {
         mutate(row_id = row_number()) %>%
         arrange(match(row_id, apply(across(-pitch_type), 2, which.max))) %>%
         as.data.frame() %>%
-        `rownames<-`(.$pitch_type) %>%
+        select(pitch_type, row_id, colnames(select(., -pitch_type, 
+                                                   -row_id))) %>%
+        rbind(., c("", "", sapply(1:(ncol(.) - 2), function(x) {
+            data <- cluster_df %>%
+                select(pitcher, game_year, outcome) %>%
+                filter(pitcher == pitcher_id, game_year == year) %>%
+                cbind(., model$classification) %>%
+                `colnames<-`(c("pitcher", "game_year", "outcome", "class")) %>%
+                filter(class == x) %>%
+                select(outcome)
+            round(sum(data) / nrow(data), 4)})), plot_points[, 1:ncol(.)]) %>%
+        `rownames<-`(c(.$pitch_type[1:(nrow(.) - 3)], "Outcomes", "Color", 
+                       "Shape")) %>%
         select(-pitch_type, -row_id)
 
     if (ncol(cluster_names) >= 4) {
-        rbind(cluster_names, c(pitcher_id, year, "pitch", "clusters",
-                               rep("", ncol(cluster_names) - 4))) %>%
+        cluster_table <- rbind(cluster_names, 
+                               c(pitcher_id, year, "pitch", "clusters",
+                                 rep("", ncol(cluster_names) - 4))) %>%
             `rownames<-`(c(rownames(cluster_names), "Pitcher")) %>%
-            suppressWarnings() %>%
-            View()
+            suppressWarnings()
+        View(cluster_table)
     } else {
         View(cluster_names)
     }
@@ -159,14 +196,8 @@ set.seed(333)
 get_pitcher_clusters <- function(pitcher_mlbid, season) {
     print(plot_clusters(pitcher_id = pitcher_mlbid, year = season))
     get_cluster_table(pitcher_id = pitcher_mlbid, year = season)
-    
-    model_info <- more_stats_df %>%
-        filter(pitcher == pitcher_mlbid, game_year == season) %>%
-        select(model) %>%
-        head(9)
-    
-    assign("chosen_model", model_info, envir = globalenv())
-    View(chosen_model)
 }
 
-get_pitcher_clusters(pitcher_mlbid = 669302, season = 2023)
+set.seed(333)
+
+get_pitcher_clusters(pitcher_mlbid = 624133, season = 2022)
