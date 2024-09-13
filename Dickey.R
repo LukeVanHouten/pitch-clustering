@@ -23,21 +23,29 @@ stats_df <- dbGetQuery(conn, stats_query)
 dickey_df <- stats_df %>%
     select(pitch_type, game_pk, game_year, game_date, pitcher, release_speed,
            release_spin_rate, pfx_x, pfx_z, at_bat_number, pitch_number, 
-           events, type) %>%
+           events, type, strikes) %>%
     filter(pitcher == 285079, !is.na(release_speed), !is.na(pfx_x), 
            !is.na(pfx_z), !(pitch_type %in% c("IN", "PO", "")))
 
 outcomes_df <- dickey_df %>%
-    select(game_pk, game_year, pitcher, at_bat_number, events, type) %>%
-    group_by(pitcher, game_year, game_pk, at_bat_number) %>%
+    select(game_pk, game_year, at_bat_number, pitch_number, events, type, 
+           strikes) %>%
+    group_by(game_year, game_pk, at_bat_number) %>%
     mutate(event = as.numeric(
         events %in% c("strikeout", "field_out", "grounded_into_double_play", 
                       "double_play", "triple_play", "pickoff_1b", "pickoff_3b", 
                       "caught_stealing_2b", "caught_stealing_home", "other_out",
                       "strikeout_double_play")), call = as.numeric(type == "S"), 
-        score = event + call, outcome = as.numeric(score >= 1)) %>%
+        score = event + call, outcome = as.numeric(score >= 1),
+        strike_percentage = as.numeric(type != "B"), pitch_ba = as.numeric(
+            events %in% c("single", "double", "triple", "home_run")), 
+        hr_percentage = as.numeric(events == "home_run"),
+        k_percentage = as.numeric(events == "strikeout"),
+        first_pitch = as.numeric(pitch_number == 1),
+        two_strikes = as.numeric(strikes == 2)) %>%
     ungroup() %>%
-    select(outcome)
+    select(outcome, pitch_ba, strike_percentage, hr_percentage, k_percentage, 
+           first_pitch, two_strikes)
 
 plot_points <- data.frame(
     color = c("", "", "blue", "red", "green", "purple", "orange", "lightblue", 
@@ -100,6 +108,11 @@ plot_clusters <- function(year) {
     mod <- filter(cluster_df, game_year == year)$model[[1]]
     assign("dickey_model", mod, envir = globalenv())
     
+    assign("ari", round(adjustedRandIndex(mod$classification, as.vector(
+        cluster_df %>% 
+            filter(game_year == year) %>% 
+            select(pitch_type))$pitch_type), 4), envir = globalenv())
+    
     p1 <- as.ggplot(function() plot(mod, dimen = c(2, 1), 
                                     what = "classification")) +
         labs(title = paste("   R.A. Dickey", year, "Pitch Clusters"))
@@ -124,17 +137,36 @@ get_cluster_table <- function(year) {
         as.data.frame() %>%
         select(pitch_type, row_id, colnames(select(., -pitch_type, 
                                                    -row_id))) %>%
-        rbind(., c("", "", sapply(1:(ncol(.) - 2), function(x) {
-            data <- cluster_df %>%
-                select(game_year, outcome) %>%
-                filter(game_year == year) %>%
-                cbind(., model$classification) %>%
-                `colnames<-`(c("pitcher", "game_year", "outcome", "class")) %>%
-                filter(class == x) %>%
-                select(outcome)
-            round(sum(data) / nrow(data), 4)})), plot_points[, 1:ncol(.)]) %>%
-        `rownames<-`(c(.$pitch_type[1:(nrow(.) - 3)], "Outcomes", "Color", 
-                       "Shape")) %>%
+        rbind(., plot_points[, 1:ncol(.)], 
+              cbind(rep("", 7), rep("", 7), 
+                    sapply(1:(ncol(.) - 2), function(x) {
+            cluster_df %>%
+                select(game_year, outcome, strike_percentage, k_percentage,
+                       hr_percentage, pitch_ba, first_pitch, two_strikes, 
+                       cluster) %>%
+                filter(game_year == year, cluster == x) %>%
+                select(-game_year, -cluster) %>%
+                summarize(outcome = round(sum(outcome) / nrow(.), 4), 
+                          strike_percentage = round(sum(strike_percentage) /
+                                                        nrow(.), 4),
+                          k_percentage = round(sum(k_percentage) / nrow(.), 4),
+                          hr_percentage = round(sum(hr_percentage) / nrow(.), 
+                                                    4),
+                          pitch_ba = round(sum(pitch_ba) / nrow(.), 4),
+                          first_pitch = round(sum(first_pitch) / nrow(.), 4),
+                          two_strikes = round(sum(two_strikes) / nrow(.), 
+                                              4)) %>%
+                t()}) %>% as.data.frame()) %>%
+                  `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2))), 
+              cbind(rep("", 4), rep("", 4), 
+                    dickey_model$parameters$mean %>% 
+                        as.data.frame() %>% 
+                        mutate_all(round, 4)) %>% 
+                  `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2)))) %>%
+        `rownames<-`(c(.$pitch_type[1:(nrow(.) - 13)], "Color", "Shape", 
+                       "Outcomes", "Strike%", "K%", "HR%", "Pitch BA", 
+                       "1st Pitch", "2 Strikes", "Mean Velocity", 
+                       "Mean Spin Rate", "Mean X-Break", "Mean Z-Break")) %>%
         select(-pitch_type, -row_id)
     
     if (ncol(cluster_names) >= 4) {
