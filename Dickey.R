@@ -158,8 +158,7 @@ get_cluster_table <- function(year) {
                                               4)) %>%
                 t()}) %>% as.data.frame()) %>%
                   `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2))), 
-              cbind(rep("", 4), rep("", 4), 
-                    dickey_model$parameters$mean %>% 
+              cbind(rep("", 4), rep("", 4), dickey_model$parameters$mean %>% 
                         as.data.frame() %>% 
                         mutate_all(round, 4)) %>% 
                   `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2)))) %>%
@@ -181,9 +180,13 @@ get_cluster_table <- function(year) {
     }
 }
 
+set.seed(333)
+
 get_dickey_clusters <- function(season) {
     print(plot_clusters(year = season))
     get_cluster_table(year = season)
 }
+
+set.seed(333)
 
 get_dickey_clusters(2015)
