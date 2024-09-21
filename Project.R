@@ -235,4 +235,4 @@ get_pitcher_clusters <- function(pitcher_mlbid, season) {
 
 set.seed(333)
 
-get_pitcher_clusters(pitcher_mlbid = 662253, season = 2023)
+get_pitcher_clusters(pitcher_mlbid = 477132, season = 2015)

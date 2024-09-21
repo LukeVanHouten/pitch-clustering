@@ -71,8 +71,8 @@ low_spin_rates <- mapply(function(x, n) {
     sort(x[(min(na.omit(stats_df$release_spin_rate)) < x) & 
            (x < 500)][1:num_bad_pitches[[n]]], decreasing = TRUE)
     }, x = lapply(num_bad_pitches, function(y) {
-           abs(round(rnorm(round(1.1 * y, 0), mean = mean_good_kn_spin_rate, 
-                           sd = (mean_good_kn_spin_rate / 2)), 0))}), n = 1:3, 
+        abs(round(rnorm(round(1.1 * y, 0), mean = mean_good_kn_spin_rate, 
+                        sd = (mean_good_kn_spin_rate / 2)), 0))}), n = 1:3, 
                          SIMPLIFY = FALSE)
 
 set.seed(333)
