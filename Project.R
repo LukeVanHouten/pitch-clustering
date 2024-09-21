@@ -32,7 +32,8 @@ pitcher_names <- stats_df %>%
 pitcher_df <- stats_df %>%
     select(pitch_type, game_pk, game_year, game_date, pitcher, release_speed,
            release_spin_rate, pfx_x, pfx_z, at_bat_number, pitch_number, 
-           events, type, strikes) %>%
+           events, type, strikes, woba_value, 
+           estimated_woba_using_speedangle, babip_value) %>%
     mutate(pitcher_year = paste0(pitcher, "_", game_year)) %>%
     filter(pitcher_year %in% pitcher_names$pitcher_year, 
            !is.na(release_speed), !is.na(release_spin_rate), !is.na(pfx_x), 
@@ -41,7 +42,7 @@ pitcher_df <- stats_df %>%
 
 outcomes_df <- pitcher_df %>%
     select(game_pk, game_year, pitcher, at_bat_number, pitch_number, events, 
-           type, strikes) %>%
+           type, strikes, estimated_woba_using_speedangle) %>%
     group_by(pitcher, game_year, game_pk, at_bat_number) %>%
     mutate(event = as.numeric(
         events %in% c("strikeout", "field_out", "grounded_into_double_play", 
@@ -54,10 +55,11 @@ outcomes_df <- pitcher_df %>%
             hr_percentage = as.numeric(events == "home_run"),
             k_percentage = as.numeric(events == "strikeout"),
             first_pitch = as.numeric(pitch_number == 1),
-            two_strikes = as.numeric(strikes == 2)) %>%
+            two_strikes = as.numeric(strikes == 2), 
+            xwoba = estimated_woba_using_speedangle) %>%
     ungroup() %>%
     select(outcome, pitch_ba, strike_percentage, hr_percentage, k_percentage, 
-           first_pitch, two_strikes)
+           first_pitch, two_strikes, xwoba)
 
 # set.seed(333)
 # This code is bad and takes hours to run
@@ -109,8 +111,8 @@ model_info <- read.csv("model_info.csv")
 
 cluster_df <- cbind(pitcher_df, outcomes_df, clusters, model_info) %>%
     select(-game_pk, -game_date, -at_bat_number, -pitch_number, -events, -type, 
-           -pitcher_year, -strikes) %>%
-    `colnames<-`(c(colnames(.)[1:14], "cluster", "mod"))
+           -pitcher_year, -strikes, -estimated_woba_using_speedangle) %>%
+    `colnames<-`(c(colnames(.)[1:17], "cluster", "mod"))
 
 cluster_counts <- cluster_df %>%
     select(pitcher, game_year, cluster) %>%
@@ -179,50 +181,102 @@ get_cluster_table <- function(pitcher_id, year) {
         as.data.frame() %>%
         select(pitch_type, row_id, colnames(select(., -pitch_type, 
                                                    -row_id))) %>%
-        rbind(., plot_points[, 1:ncol(.)], 
-              cbind(rep("", 7), rep("", 7), 
+        rbind(., plot_points[, 1:ncol(.)],
+              cbind(rep("", 9), rep("", 9), 
                     sapply(1:(ncol(.) - 2), function(x) {
             cluster_df %>%
-                select(pitcher, game_year, outcome, pitch_ba, strike_percentage, 
+                select(pitcher, game_year, outcome, strike_percentage, 
                        hr_percentage, k_percentage, first_pitch, 
-                       two_strikes) %>%
+                       two_strikes, woba_value, xwoba, babip_value) %>%
                 filter(pitcher == pitcher_id, game_year == year) %>%
                 cbind(., model$classification) %>%
-                `colnames<-`(c(colnames(.)[1:9], "class")) %>%
+                `colnames<-`(c(colnames(.)[1:11], "class")) %>%
                 filter(class == x) %>%
-                select(outcome, strike_percentage, k_percentage, hr_percentage, 
-                       pitch_ba, first_pitch, two_strikes) %>%
+                select(outcome , strike_percentage, k_percentage, hr_percentage,
+                       first_pitch, two_strikes, babip_value, woba_value, 
+                       xwoba) %>%
                 summarize(outcome = round(sum(outcome) / nrow(.), 4), 
                           strike_percentage = round(sum(strike_percentage) /
                                                     nrow(.), 4),
                           k_percentage = round(sum(k_percentage) / nrow(.), 4),
                           hr_percentage = round(sum(hr_percentage) / nrow(.), 
                                                 4),
-                          pitch_ba = round(sum(pitch_ba) / nrow(.), 4),
                           first_pitch = round(sum(first_pitch) / nrow(.), 4),
                           two_strikes = round(sum(two_strikes) / nrow(.), 
-                                              4)) %>%
+                                              4),
+                          babip = round(sum(na.omit(babip_value)) / 
+                                        length(na.omit(babip_value)), 4),
+                          woba = round(mean(na.omit(woba_value)), 4),
+                          xwoba = round(mean(na.omit(xwoba)), 4)) %>%
                 t()}) %>% as.data.frame()) %>%
                   `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2))), 
               cbind(rep("", 4), rep("", 4), model$parameters$mean %>% 
                         as.data.frame() %>% 
                         mutate_all(round, 4)) %>% 
                   `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2)))) %>%
-        `rownames<-`(c(.$pitch_type[1:(nrow(.) - 13)], "Color", "Shape", 
-                       "Outcomes", "Strike%", "K%", "HR%", "Pitch BA", 
-                       "1st Pitch", "2 Strikes", "Mean Velocity", 
+        `rownames<-`(c(.$pitch_type[1:(nrow(.) - 15)], "Color", "Shape", 
+                       "Outcomes", "Strike%", "K%", "HR%", "1st Pitch", "2 Strikes",
+                       "BABIP", "wOBA", "xwOBA", "Mean Velocity", 
                        "Mean Spin Rate", "Mean X-Break", "Mean Z-Break")) %>%
         select(-pitch_type, -row_id)
 
     if (ncol(cluster_names) >= 4) {
         cluster_table <- rbind(cluster_names, 
                                c(pitcher_id, year, "pitch", "clusters",
-                                 rep("", ncol(cluster_names) - 4))) %>%
-            `rownames<-`(c(rownames(cluster_names), "Pitcher")) %>%
+                                 rep("", ncol(cluster_names) - 4)),
+                               c("Level", "Stats",
+                                 rep("", ncol(cluster_names) - 2)),
+                               c("Level", "Stats",
+                                 rep("", ncol(cluster_names) - 2)),
+                               c("Stats", rep("", ncol(cluster_names) - 1))) %>%
+            `rownames<-`(c(rownames(cluster_names), "Pitcher", "Pitch", "PA",
+                           "Cluster")) %>%
             suppressWarnings()
+        cluster_table <- cluster_table %>%
+            slice(-which(rownames(cluster_table) %in% c("Pitch", "PA", 
+                                                        "Cluster", 
+                                                        "Pitcher"))) %>%
+            add_row(cluster_table["Pitch", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) == "Shape")) %>%
+            add_row(cluster_table["PA", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) == "BABIP")) %>%
+            add_row(cluster_table["Cluster", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) ==
+                                   "Mean Spin Rate")) %>%
+            add_row(cluster_table["Pitcher", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) == "Shape")) %>%
+            `rownames<-`(c(rownames(.)[1:(nrow(.) - 19)], "Color", "Shape", 
+                           "Pitcher", "Pitch", "Outcomes", "Strike%", "K%", 
+                           "HR%", "1st Pitch", "2 Strikes", "PA", "BABIP", 
+                           "wOBA", "xwOBA", "Cluster", "Mean Velocity", 
+                           "Mean Spin Rate", "Mean X-Break", "Mean Z-Break"))
         View(cluster_table)
     } else {
-        View(cluster_names)
+        cluster_table <- rbind(cluster_names, 
+                               c("Level", "Stats",
+                                 rep("", ncol(cluster_names) - 2)),
+                               c("Level", "Stats",
+                                 rep("", ncol(cluster_names) - 2)),
+                               c("Stats", rep("", ncol(cluster_names) - 1))) %>%
+            `rownames<-`(c(rownames(cluster_names), "Pitch", "PA", 
+                           "Cluster")) %>%
+            suppressWarnings()
+        cluster_table <- cluster_table %>%
+            slice(-which(rownames(cluster_table) %in% c("Pitch", "PA", 
+                                                        "Cluster"))) %>%
+            add_row(cluster_table["Pitch", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) == "Shape")) %>%
+            add_row(cluster_table["PA", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) == "BABIP")) %>%
+            add_row(cluster_table["Cluster", , drop = FALSE], 
+                    .after = which(rownames(cluster_table) ==
+                                   "Mean Spin Rate")) %>%
+        `rownames<-`(c(rownames(.)[1:(nrow(.) - 18)], "Color", "Shape", 
+                       "Pitch", "Outcomes", "Strike%", "K%", "HR%", 
+                       "1st Pitch", "2 Strikes", "PA", "BABIP", "wOBA", 
+                       "xwOBA", "Cluster", "Mean Velocity", 
+                       "Mean Spin Rate", "Mean X-Break", "Mean Z-Break"))
+        View(cluster_table)
     }
 }
 
@@ -235,4 +289,4 @@ get_pitcher_clusters <- function(pitcher_mlbid, season) {
 
 set.seed(333)
 
-get_pitcher_clusters(pitcher_mlbid = 477132, season = 2015)
+get_pitcher_clusters(pitcher_mlbid = 669302, season = 2023)
