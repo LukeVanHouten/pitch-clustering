@@ -191,8 +191,7 @@ get_cluster_table <- function(year) {
         add_row(cluster_names["PA", , drop = FALSE], 
                 .after = which(rownames(cluster_names) == "1st Pitch")) %>%
         add_row(cluster_names["Cluster", , drop = FALSE], 
-                .after = which(rownames(cluster_names) ==
-                                   "Mean Spin Rate")) %>%
+                .after = which(rownames(cluster_names) == "Mean Spin Rate")) %>%
         add_row(cluster_names["Dickey", , drop = FALSE], 
                 .after = which(rownames(cluster_names) == "Shape")) %>%
         `rownames<-`(c(rownames(.)[1:(nrow(.) - 19)], "Color", "Shape", 

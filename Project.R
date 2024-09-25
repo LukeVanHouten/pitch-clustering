@@ -213,7 +213,6 @@ get_cluster_table <- function(pitcher_id, year) {
                           xwoba = round(mean(na.omit(xwoba)), 4)) %>%
                 t()}) %>% as.data.frame()) %>%
                   `colnames<-`(c("pitch_type", "row_id", 1:(ncol(.) - 2))), 
-              
               cbind(rep("", 4), rep("", 4), model$parameters$mean %>% 
                         as.data.frame() %>% 
                         mutate_all(round, 4)) %>% 
@@ -293,4 +292,4 @@ get_pitcher_clusters <- function(pitcher_mlbid, season) {
     get_cluster_table(pitcher_id = pitcher_mlbid, year = season)
 }
 
-get_pitcher_clusters(pitcher_mlbid = 669302, season = 2023)
+get_pitcher_clusters(pitcher_mlbid = 346798, season = 2015)
