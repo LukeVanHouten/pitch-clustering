@@ -292,4 +292,4 @@ get_pitcher_clusters <- function(pitcher_mlbid, season) {
     get_cluster_table(pitcher_id = pitcher_mlbid, year = season)
 }
 
-get_pitcher_clusters(pitcher_mlbid = 346798, season = 2015)
+get_pitcher_clusters(pitcher_mlbid = 621111, season = 2021)

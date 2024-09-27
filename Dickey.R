@@ -209,4 +209,4 @@ get_dickey_clusters <- function(season) {
     get_cluster_table(year = season)
 }
 
-get_dickey_clusters(2015)
+get_dickey_clusters(season = 2015)
